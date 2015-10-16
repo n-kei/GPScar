@@ -1,9 +1,16 @@
+#include "ReceiveGPS.h"
+#include "Control.h"
+#include "Motor.h"
 #include "run.h"
-#include <SoftwareSerial.h>
 
-#define MODE_NOMODIFY //GPSで方位が得られなかったときニュートラルに戻す
-//#define MODE_RUN   //自律走行実行モード
-#define MODE_TEST   //テストモード
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
+
+//#define MODE_NOMODIFY //GPSで方位が得られなかったときニュートラルに戻す
+#define MODE_RUN      //自律走行実行モード
+//#define MODE_TEST   //テストモード
+
+#define STACKCOUNTER_NUM 10
 
 ////////////モータ制御ピン/////////////
 #define LFPin 6
@@ -30,77 +37,85 @@
 #define SSTX 9
 ////////////////////////////////////////////
 
-
 #ifdef MODE_RUN
+TinyGPSPlus gps;
+struct SerialPeripheral ss = {SOFTWARESERIAL, 9600, SSRX, SSTX};
+ReceiveGPS recvGPS(&gps, ss);
+Control control;
+Motor motor(LFPin, LBPin, RFPin, RBPin);
+
 void setup()
 {
   Serial.begin(9600);
+  control.setPIDgain(DEF_KS, 0, 0);
+  control.setControlValueRange(DEF_STRMIN, DEF_STRMAX);
+  setGoalPoint(GOAL_LAT, GOAL_LON);
+  setWPrange(DEF_WR_M);
 
+  recvGPS.gelay(1000);
+  setOriginPoint(gps.location.lat(), gps.location.lng());
+
+  motor.control(255, 255);
+  delay(10000);
+  motor.control(0, 0);
 }
 
 void loop()
 {
-  float flat_deg, flon_deg, speed_knot, dir_deg;
-  struct PolarCoordinate current_pp;
-  int posSteer = 0;
-  struct SerialPeripheral software_serial = {SOFTWARESERIAL, SSRX, SSTX, 9600};
-  RunGPScar run(LFPin, LBPin, RFPin, RBPin,
-                GOAL_LAT, GOAL_LON,
-                DEF_WR_M,
-                software_serial);
+  float currentDir_deg;
+  unsigned long int currentDis_m;
+  int posSteer;
 
-  while (run.getGPS(&flat_deg, &flon_deg, &speed_knot, &dir_deg) < 0);
-  current_pp.dis_m = run.getDistance(flat_deg, flon_deg);
-  current_pp.dir_deg = run.getDirect(flat_deg, flon_deg, DIRMODIFY_NO);
-  posSteer = current_pp.dir_deg * DEF_KS;
-  posSteer = constrain(posSteer, DEF_STRMIN, DEF_STRMAX);
+  recvGPS.gelay(1000);
+  currentDir_deg = getDirect2Goal(gps.location.lat(), gps.location.lng());
+  currentDis_m = getDistance2Goal(gps.location.lat(), gps.location.lng());
+  currentDir_deg = changeRange_deg(currentDir_deg);
 
-#ifdef MODE_NOMODIFY
-  if (speed_knot == 0) posSteer = 0;
+  if (isGoalPoint(currentDis_m) == CUR_IS_GOAL) {
+    motor.control(0, 0);
+    return;
+  }
+  
+  posSteer = control.getPID(currentDir_deg, 0);
+
+  motor.control(DEF_RUNSP - posSteer, DEF_RUNSP + posSteer);
+
+#ifdef MODE_NOSTRMODIFY
+  float lastFlat_deg = gps.location.lat();
+  float lastFlon_deg = gps.location.lng();
+  unsigned long int stackCounter = 0;
+
+  if (TinyGPSPlus::courseTo(lastFlat_deg, lastFlon_deg,
+                            gps.location.lat(), gps.location.lng()) == 0)
+    stackCounter++;
+
+  if (stackCounter > STACKCOUNTER_NUM)
+    motor.control(255, 255);
 #endif
 
-  run.control_motor(DEF_RUNSP + posSteer, DEF_RUNSP - posSteer);
-
-  if (run.isGoalPoint(current_pp.dis_m) == CUR_IS_GOAL) {
-    run.control_motor(0, 0);
-    while (1);
-  }
-
-  //delay(1000);
 }
 #endif
 
 #ifdef MODE_TEST
 
-SoftwareSerial ss1(10, 9);
-RunGPScar run;
+TinyGPSPlus gps;
+struct SerialPeripheral ss = {SOFTWARESERIAL, 9600, 10, 9};
+ReceiveGPS recvGPS(&gps, ss);
 
 void setup()
 {
   Serial.begin(9600);
-  ss1.begin(9600);
-
-  run.init_run();
 }
 
 void loop()
 {
-  char str[100];
+  double angle;
 
-  int i = 0;
-  char c;
+  angle = TinyGPSPlus::courseTo(35.6544, 139.74477, 21.4225, 39.8261);
+  Serial.print("angle = ");  Serial.println(changeRange_deg(angle));
+  delay(1000);
 
-  while (1) {
-    if (ss1.available()) {
-      c = ss1.read();
-      str[i] = c;
-      if (c == '\n') break;
-      i++;
-    }
-  }
-  str[i] = '\0';  // \0: end of string
-
-  Serial.println(str);
 }
+
 #endif
 

@@ -8,7 +8,7 @@
 #endif
 
 #include <TinyGPS++.h>
-#include "run.h"
+#include "Run.h"
 
 #define GPS_GET_NUM  10    //GPS取得数
 #define EARTH_R_KM      6378.137 //地球の半径[km]

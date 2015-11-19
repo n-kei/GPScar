@@ -1,10 +1,15 @@
 #include "ReceiveGPS.h"
 #include "Control.h"
 #include "Motor.h"
+<<<<<<< HEAD
 #include "run.h"
 #include "ADXL345.h"
 #include "skLPSxxSPI.h"
 #include <SPI.h>
+=======
+#include "Run.h"
+
+>>>>>>> 02c2ea2a6e4d389cea7c753483a09b4c4ea2e4bb
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
 
